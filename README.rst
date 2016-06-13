@@ -1,4 +1,4 @@
 hansel
 ======
 
-A graph-inspired data structure for determining likely chains of sequences from breadcrumbs of evidence
+A (work-in-progress) graph-inspired data structure for determining likely chains of sequences from breadcrumbs of evidence

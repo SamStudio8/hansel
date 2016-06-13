@@ -2,7 +2,6 @@ from math import log,log10
 
 import numpy as np
 #TODO Abstract symbols
-#TODO Abstract load_from_bam to gretel.util
 
 #NOTE
 # Although it is possible to 'fully' subclass numpy's ndarray, the
@@ -47,6 +46,10 @@ class Hansel(np.ndarray):
     @property
     def sources(self):
         return self.n_slices
+
+    @property
+    def observations(self):
+        return self.n_crumbs
 
     def add_observation(self, snp_from, snp_to, pos_from, pos_to):
         self.n_crumbs += 1
@@ -169,8 +172,10 @@ class Hansel(np.ndarray):
     def __estimate_conditional(self, av, obs, total):
         return (1 + obs)/float(av + total)
 
+    #TODO
     def validate_path(self):
         pass
 
+    #TODO
     def probability_path(self):
         pass

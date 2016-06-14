@@ -1,11 +1,12 @@
 History
 =======
 
-0.0.3-wip
----------
+0.0.3
+-----
 * Add `observations` property for those who may find `crumbs` confusing or odd.
 * Remove domain specific language ("SNP", "mallele") in favour of "symbol".
 * Require symbol list on constuction, prevent empty list with casting/template.
+* Ensure to catch an in-progress __new__ in __array_finalize__
 
 0.0.2
 -----

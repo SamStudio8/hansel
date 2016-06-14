@@ -17,7 +17,10 @@ class Hansel(np.ndarray):
 
     def __new__(cls, input_arr, symbols):
         # Force our class on the input_arr
+        #TODO Is there an overhead in casting a view here (are we copying the
+        #     big matrix to a new object? :(
         obj = np.asarray(input_arr).view(cls)
+
         obj.is_weighted = False
         obj.symbols = symbols
         obj.n_slices= 0
@@ -26,23 +29,33 @@ class Hansel(np.ndarray):
 
     #NOTE Provides support for construction mechanisms of numpy
     def __array_finalize__(self, obj):
-        if obj is None:
-            # We're in a __new__ call (so we're covered)
+        #NOTE This is probably quite gross.
+        #     I am quite sure that `obj` will never be `None` here (despite docs)
+        #     as __new__ now invokes a view cast and thus always sends us to
+        #     __array_finalize__ *before* it has had a chance to set variables.
+        #     I try and catch us inside a "__new__ view cast" by checking whether
+        #     obj is a plain ndarray (which is *should* be if this is new).
+        #     Elsewise type(obj) should be hansel.Hansel for a view cast or
+        #     from-template on an existing Hansel structure.
+        if obj is None or type(obj) == np.ndarray:
             return
 
+        #NOTE Defaults are set here, not in __new__, as it is this method
+        #     that actually oversees creation of all objects (__new__) sends
+        #     us here anyway... Unfortunately this leaves us no choice but to
+        #     provide an impractical default for the symbols list...
         # View casting or from-template, add the missing info from the
         # existing object before finalizing
         self.is_weighted = getattr(obj, 'is_weighted', False)
-        self.symbols = getattr(obj, 'symbols', [])
         self.n_slices = getattr(obj, 'n_slices', 0)
         self.n_crumbs = getattr(obj, 'n_crumbs', 0)
+        self.symbols = getattr(obj, 'symbols', [])
 
         #TODO Safer warning?
-        if len(self.symbols) == 0:
+        if self.symbols is None or len(self.symbols) == 0:
             import sys
-            sys.stderr.write("[FAIL] Attempted to allocate Hansel without symbols.\n")
+            sys.stderr.write("[FAIL] Attempted to allocate Hansel structure without symbols.\n")
             sys.exit(1)
-
 
     def __orient_positions(self, i, j):
         if i < j:

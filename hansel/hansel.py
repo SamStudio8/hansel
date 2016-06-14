@@ -14,7 +14,43 @@ import numpy as np
 # You can read more about subclassing ndarray via the official documentation:
 # http://docs.scipy.org/doc/numpy-1.10.1/user/basics.subclassing.html
 class Hansel(np.ndarray):
+    """API to a numpy-backed graph-inspired data structure for determining
+    likely sequences of symbols from breadcrumbs of evidence.
 
+    Given a numpy array and a list of permitted symbols, Hansel presents a
+    user friendly API to store and operate on a graph-like data structure
+    that can be used to investigate likely sequences of symbols based on
+    observations of pairwise co-occurrence of those symbols in a dimension
+    such as space or time.
+
+    Parameters
+    ----------
+
+    input_arr : 4D numpy array
+        A numpy array (typically initialised with zeros) of size (A, A, B+2, B+2),
+        where `A` is the number of `symbols` and `B` are the points in time or
+        space on which pairwise observations between symbols can be observed.
+
+    symbols : list{str}
+        A list of permitted states or symbols as strings.
+
+    Attributes
+    ----------
+
+    n_slices(sources) : int
+        The number of distinct sources from which observations were received.
+
+    n_crumbs(observations) : int
+        The number of pairwise observations that were observed.
+
+    symbols : list{str}
+        The list of permitted states or symbols.
+
+    is_weighted : boolean
+        Whether or not the underlying numpy array has been modified by the
+        `reweight_observation` function at least once.
+
+    """
     def __new__(cls, input_arr, symbols):
         # Force our class on the input_arr
         #TODO Is there an overhead in casting a view here (are we copying the
@@ -65,22 +101,94 @@ class Hansel(np.ndarray):
 
     @property
     def sources(self):
+        """An alias for `n_slices`"""
         return self.n_slices
 
     @property
     def observations(self):
+        """An alias for `n_crumbs`"""
         return self.n_crumbs
 
     def add_observation(self, symbol_from, symbol_to, pos_from, pos_to):
+        """Add a pairwise observation to the data structure.
+
+        Parameters
+        ----------
+
+        symbol_from : str
+            The first observed symbol of the pair (in space or time).
+
+        symbol_to : str
+            The second observed symbol of the pair (in space or time).
+
+        pos_from : int
+            The "position" at which `symbol_from` was observed.
+
+        pos_to : int
+            The "position" at which `symbol_to` was observed.
+
+        """
         self.n_crumbs += 1
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
         self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] += 1
 
     def get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
+        """Get the number of co-occurrences of a pair of positioned symbols.
+
+        Parameters
+        ----------
+
+        symbol_from : str
+            The first observed symbol of the pair (in space or time).
+
+        symbol_to : str
+            The second observed symbol of the pair (in space or time).
+
+        pos_from : int
+            The "position" at which `symbol_from` was observed.
+
+        pos_to : int
+            The "position" at which `symbol_to` was observed.
+
+        Returns
+        -------
+        Number of observations : float
+            The number of times `symbol_from` was observed at `pos_from` with
+            `symbol_to` at `pos_to` across all sources (slices).
+
+            .. note::
+                It is possible for the number of observations returned to be
+                a `float` if :attr:`hansel.hansel.Hansel.is_weighted`
+                is `True`.
+        """
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
         return self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to]
 
+    #TODO Describe the conditions under which reweighting halts in the documentation
     def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
+        """Alter the number of co-occurrences between a pair of positioned symbols by some ratio.
+
+        .. note:: This function will set :attr:`hansel.hansel.Hansel.is_weighted` to `True`.
+
+        Parameters
+        ----------
+
+        symbol_from : str
+            The first observed symbol of the pair to be reweighted (in space or time).
+
+        symbol_to : str
+            The second observed symbol of the pair to be reweighted (in space or time).
+
+        pos_from : int
+            The "position" at which `symbol_from` was observed.
+
+        pos_to : int
+            The "position" at which `symbol_to` was observed.
+
+        ratio : float
+            The ratio by which to subtract the current number of observations.
+            That is, `new_value = old_value - (ratio * old_value)`.
+        """
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
         old_v = self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to]
         new_v = old_v - (ratio*old_v)
@@ -102,12 +210,29 @@ class Hansel(np.ndarray):
         #TODO Catch potential IndexError
         return self.symbols[num]
 
-    def get_marginal_at(self, at_symbol):
+    #TODO What about non-whole genes (need a special symbol)
+    def get_counts_at(self, at_pos):
+        """Get the counts for each symbol that appears at a given position.
+
+        Parameters
+        ----------
+
+        at_pos : int
+            The "position" for which to return the number of occurrences of each symbol.
+
+        Returns
+        -------
+        Symbol counts : dict{str, float}
+            A dictionary whose keys are each of the symbols that were observed
+            at position `at_pos` and a special "total" key. The values are the
+            number of observations of that symbol at `at_pos`. The "total" is
+            the sum of all observation counts.
+        """
         marg = {"total": 0}
         for symbol_a in self.symbols:
             obs = 0
             for symbol_b in self.symbols:
-                obs += self.get_observation(symbol_a, symbol_b, at_symbol, at_symbol+1)
+                obs += self.get_observation(symbol_a, symbol_b, at_pos, at_pos+1)
 
             if obs > 0:
                 marg[symbol_a] = obs
@@ -117,14 +242,58 @@ class Hansel(np.ndarray):
         return marg
 
     def get_marginal_of_at(self, of_symbol, at_symbol):
-        marginal = self.get_marginal_at(at_symbol)
+        """Get the marginal distribution of a symbol appearing at a position.
+
+        Parameters
+        ----------
+
+        of_symbol : str
+            The symbol for which to calculate the marginal distribution.
+
+        at_symbol : int
+            The position at which to calculate the marginal distribution.
+
+        Returns
+        -------
+
+        Marginal probability : float
+            The probability a random symbol drawn from all observations at
+            `at_symbol` being equal to `of_symbol`. Alternatively, the
+            proportion of all symbols observed at `at_symbol` being equal
+            to `of_symbol`.
+        """
+        marginal = self.get_counts_at(at_symbol)
         return marginal[of_symbol] / marginal["total"]
 
     def get_edge_weights_at(self, symbol_pos, current_path, L=5):
+        """Get the outgoing weighted edges at some position, given a path to that position.
+
+        Parameters
+        ----------
+
+        symbol_pos : int
+            The index of the current position.
+
+        current_path : list{str}
+            A list of symbols representing the path of selected symbols that led
+            to the current position, `symbol_pos`.
+
+        L : int, optional(default=5)
+            The number of positions back from the current position (inclusive)
+            to consider when calculating conditional probabilities.
+
+        Returns
+        -------
+        Conditional distribution : dict{str, float}
+            A dictionary whose keys are each of the possible symbols that may
+            be reached from the current position, given the observed path.
+            The values are `log10` conditional probabilities of the next symbol
+            in the path (or sequence) being that of the key.
+        """
         # ...work out each probability, for each branch
         curr_branches = {}
-        curr_branches_tot = 0.0
-        for symbol in self.get_marginal_at(symbol_pos):
+        #curr_branches_tot = 0.0
+        for symbol in self.get_counts_at(symbol_pos):
             if symbol == "total":
                 continue
 
@@ -142,49 +311,72 @@ class Hansel(np.ndarray):
                 curr_branches[symbol] += log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos))
 
             curr_branches[symbol] += log10(self.get_marginal_of_at(symbol, symbol_pos))
-            curr_branches_tot += curr_branches[symbol]
+            #curr_branches_tot += curr_branches[symbol]
 
-        return curr_branches, curr_branches_tot
+        return curr_branches
 
-    #TODO This doesn't belong here, the API should provide an interface to the
-    #     underlying evidence only, we need not concern ourselves with the end use.
-    def select_next_edge_at(self, symbol_pos, current_path, L=5):
-        curr_branches = self.get_edge_weights_at(symbol_pos, current_path, L=L)[0]
-        print "\t[TREE] %s" % curr_branches
-        # Return the symbol and probability of the next base to add to the
-        # current path based on the best marginal
-        next_v = 0.0
-        next_m = None
-
-        """
-        if ENTROPY.any() and random.random() > ENTROPY[i] and path_i > 0 and symbol == path_i:
-            for symbol in curr_branches:
-                if max_v is None:
-                    max_v = curr_branches[symbol]
-                    max_m = symbol
-                elif curr_branches[symbol] < max_v:
-                    max_v = curr_branches[symbol]
-                    max_m = symbol
-        """
-        for symbol in curr_branches:
-            if symbol == "total":
-                continue
-            if next_m is None:
-                next_v = curr_branches[symbol]
-                next_m = symbol
-            elif curr_branches[symbol] > next_v:
-                next_v = curr_branches[symbol]
-                next_m = symbol
-
-        return next_m, next_v
-
+    #TODO Given/predicted is a bit misleading as they turn out to be the "wrong way around"
     def get_conditional_of_at(self, symbol_from, symbol_to, pos_from, pos_to):
-        marg_from = self.get_marginal_at(pos_from) #TODO pos_from - 1?
+        """Given a symbol and position, calculate the conditional for co-occurrence with another positioned symbol.
+
+        Parameters
+        ----------
+
+        symbol_from : str
+            The first (given) symbol of the pair on which to condition.
+
+        symbol_to : str
+            The second (predicted) symbol of the pair on which to condition.
+
+        pos_from : int
+            The "position" at which the given `symbol_from` was observed.
+
+        pos_to : int
+            The "position" at which the predicted `symbol_to` was observed.
+
+
+        Returns
+        -------
+        Conditional probability : float
+            The conditional probability of `symbol_from` occurring at `pos_from`
+            given observation of a predicted `symbol_to` at `pos_to`.
+        """
+        marg_from = self.get_counts_at(pos_from) #TODO pos_from - 1?
         obs = self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
         total = self.get_spanning_support(symbol_to, pos_from, pos_to)
         return self.__estimate_conditional(len(marg_from)-1, obs, total)
 
+    #TODO Should this be "number of sources", rather than "number of observations"
     def get_spanning_support(self, symbol_to, pos_from, pos_to):
+        """Get the number of observations that span over two positions of interest, that also feature some symbol.
+
+        Parameters
+        ----------
+
+        symbol_to : str
+            The symbol that should appear at `pos_to`.
+
+        pos_from : int
+            A position that appears "before" `pos_to` in space or time that
+            must be overlapped by a source to be counted. The symbol at
+            `pos_from` is not relevant.
+
+        pos_to : int
+            The second position a source must overlap (but not necessarily
+            terminate at) that must be the symbol `symbol_to`.
+
+
+        Returns
+        -------
+        Number of observations : float
+            The number of observations yielded from sources that overlap both
+            `pos_from` and `pos_to`, that also feature `symbol_to` at `pos_to`.
+
+            .. note::
+                It is possible for the number of observations returned to be
+                a `float` if :attr:`hansel.hansel.Hansel.is_weighted`
+                is `True`.
+        """
         total = 0
         for symbol in self.symbols:
             total += self.get_observation(symbol, symbol_to, pos_from, pos_to)
@@ -194,9 +386,9 @@ class Hansel(np.ndarray):
         return (1 + obs)/float(av + total)
 
     #TODO
-    def validate_path(self):
-        pass
+    #def validate_path(self):
+    #    pass
 
     #TODO
-    def probability_path(self):
-        pass
+    #def probability_path(self):
+    #    pass

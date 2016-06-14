@@ -13,7 +13,7 @@ test_requirements = [
 
 setuptools.setup(
     name="hanselx",
-    version="0.0.3",
+    version="0.0.4",
     url="https://github.com/samstudio8/hansel",
 
     description="A graph-inspired data structure for determining likely chains of sequences from breadcrumbs of evidence",

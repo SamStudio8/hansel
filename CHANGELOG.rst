@@ -4,6 +4,7 @@ History
 0.0.3-wip
 ---------
 * Add `observations` property for those who may find `crumbs` confusing or odd.
+* Remove domain specific language ("SNP", "mallele") in favour of "symbol".
 
 0.0.2
 -----

@@ -51,63 +51,64 @@ class Hansel(np.ndarray):
     def observations(self):
         return self.n_crumbs
 
-    def add_observation(self, snp_from, snp_to, pos_from, pos_to):
+    def add_observation(self, symbol_from, symbol_to, pos_from, pos_to):
         self.n_crumbs += 1
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        self[self.__base_num(snp_from)][self.__base_num(snp_to)][pos_from][pos_to] += 1
+        self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] += 1
 
-    def get_observation(self, snp_from, snp_to, pos_from, pos_to):
+    def get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        return self[self.__base_num(snp_from)][self.__base_num(snp_to)][pos_from][pos_to]
+        return self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to]
 
-    def reweight_observation(self, snp_from, snp_to, pos_from, pos_to, ratio):
+    def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        old_v = self[self.__base_num(snp_from)][self.__base_num(snp_to)][pos_from][pos_to]
+        old_v = self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to]
         new_v = old_v - (ratio*old_v)
 
         if old_v != 0:
             if new_v < 1:
-                self[self.__base_num(snp_from)][self.__base_num(snp_to)][pos_from][pos_to] = 0
+                self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = 0
             else:
-                print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, snp_from, pos_to, snp_to, ratio, old_v, new_v)
-                self[self.__base_num(snp_from)][self.__base_num(snp_to)][pos_from][pos_to] = new_v
+                print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
+                self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = new_v
         self.is_weighted = True
 
-    def __base_num(self, base):
+    def __symbol_num(self, symbol):
         #TODO Catch potential IndexError
-        return self.symbols.index(base.upper())
+        #TODO Generic mechanism for casing (considering non-alphabetically named states, too...)
+        return self.symbols.index(symbol)
 
-    def __base_unnum(self, num):
+    def __symbol_unnum(self, num):
         #TODO Catch potential IndexError
         return self.symbols[num]
 
-    def get_marginal_at(self, at_snp):
+    def get_marginal_at(self, at_symbol):
         marg = {"total": 0}
-        for snp_a in self.symbols:
+        for symbol_a in self.symbols:
             obs = 0
-            for snp_b in self.symbols:
-                obs += self.get_observation(snp_a, snp_b, at_snp, at_snp+1)
+            for symbol_b in self.symbols:
+                obs += self.get_observation(symbol_a, symbol_b, at_symbol, at_symbol+1)
 
             if obs > 0:
-                marg[snp_a] = obs
+                marg[symbol_a] = obs
                 marg["total"] += obs
 
-        #print "\t[MARG] %d %s" % (snp_pos, str(marg))
+        #print "\t[MARG] %d %s" % (symbol_pos, str(marg))
         return marg
 
-    def get_marginal_of_at(self, of_snp, at_snp):
-        marginal = self.get_marginal_at(at_snp)
-        return marginal[of_snp] / marginal["total"]
+    def get_marginal_of_at(self, of_symbol, at_symbol):
+        marginal = self.get_marginal_at(at_symbol)
+        return marginal[of_symbol] / marginal["total"]
 
-    def get_edge_weights_at(self, snp_pos, current_path, L=5):
+    def get_edge_weights_at(self, symbol_pos, current_path, L=5):
         # ...work out each probability, for each branch
         curr_branches = {}
         curr_branches_tot = 0.0
-        for mallele in self.get_marginal_at(snp_pos):
-            if mallele == "total":
+        for symbol in self.get_marginal_at(symbol_pos):
+            if symbol == "total":
                 continue
 
-            curr_branches[mallele] = 0.0
+            curr_branches[symbol] = 0.0
 
             # ...with conditionals on each part of LAST L ENTRIES in the current path
             # (where the case for there being less than L entries in the path being
@@ -118,55 +119,55 @@ class Hansel(np.ndarray):
 
             for l in range(0, LI):
                 curr_i = len(current_path) - LI + l
-                curr_branches[mallele] += log10(self.get_conditional_of_at(current_path[curr_i], mallele, curr_i, snp_pos))
+                curr_branches[symbol] += log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos))
 
-            curr_branches[mallele] += log10(self.get_marginal_of_at(mallele, snp_pos))
-            curr_branches_tot += curr_branches[mallele]
+            curr_branches[symbol] += log10(self.get_marginal_of_at(symbol, symbol_pos))
+            curr_branches_tot += curr_branches[symbol]
 
         return curr_branches, curr_branches_tot
 
     #TODO This doesn't belong here, the API should provide an interface to the
     #     underlying evidence only, we need not concern ourselves with the end use.
-    def select_next_edge_at(self, snp_pos, current_path, L=5):
-        curr_branches = self.get_edge_weights_at(snp_pos, current_path, L=L)[0]
+    def select_next_edge_at(self, symbol_pos, current_path, L=5):
+        curr_branches = self.get_edge_weights_at(symbol_pos, current_path, L=L)[0]
         print "\t[TREE] %s" % curr_branches
-        # Return the mallele and probability of the next base to add to the
+        # Return the symbol and probability of the next base to add to the
         # current path based on the best marginal
         next_v = 0.0
         next_m = None
 
         """
-        if ENTROPY.any() and random.random() > ENTROPY[i] and path_i > 0 and snp == path_i:
-            for mallele in curr_branches:
+        if ENTROPY.any() and random.random() > ENTROPY[i] and path_i > 0 and symbol == path_i:
+            for symbol in curr_branches:
                 if max_v is None:
-                    max_v = curr_branches[mallele]
-                    max_m = mallele
-                elif curr_branches[mallele] < max_v:
-                    max_v = curr_branches[mallele]
-                    max_m = mallele
+                    max_v = curr_branches[symbol]
+                    max_m = symbol
+                elif curr_branches[symbol] < max_v:
+                    max_v = curr_branches[symbol]
+                    max_m = symbol
         """
-        for mallele in curr_branches:
-            if mallele == "total":
+        for symbol in curr_branches:
+            if symbol == "total":
                 continue
             if next_m is None:
-                next_v = curr_branches[mallele]
-                next_m = mallele
-            elif curr_branches[mallele] > next_v:
-                next_v = curr_branches[mallele]
-                next_m = mallele
+                next_v = curr_branches[symbol]
+                next_m = symbol
+            elif curr_branches[symbol] > next_v:
+                next_v = curr_branches[symbol]
+                next_m = symbol
 
         return next_m, next_v
 
-    def get_conditional_of_at(self, snp_from, snp_to, pos_from, pos_to):
+    def get_conditional_of_at(self, symbol_from, symbol_to, pos_from, pos_to):
         marg_from = self.get_marginal_at(pos_from) #TODO pos_from - 1?
-        obs = self.get_observation(snp_from, snp_to, pos_from, pos_to)
-        total = self.get_spanning_support(snp_to, pos_from, pos_to)
+        obs = self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
+        total = self.get_spanning_support(symbol_to, pos_from, pos_to)
         return self.__estimate_conditional(len(marg_from)-1, obs, total)
 
-    def get_spanning_support(self, snp_to, pos_from, pos_to):
+    def get_spanning_support(self, symbol_to, pos_from, pos_to):
         total = 0
         for symbol in self.symbols:
-            total += self.get_observation(symbol, snp_to, pos_from, pos_to)
+            total += self.get_observation(symbol, symbol_to, pos_from, pos_to)
         return total
 
     def __estimate_conditional(self, av, obs, total):

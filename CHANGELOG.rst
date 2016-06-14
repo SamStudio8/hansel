@@ -5,6 +5,7 @@ History
 ---------
 * Add `observations` property for those who may find `crumbs` confusing or odd.
 * Remove domain specific language ("SNP", "mallele") in favour of "symbol".
+* Require symbol list on constuction, prevent empty list with casting/template.
 
 0.0.2
 -----

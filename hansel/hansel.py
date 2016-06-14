@@ -15,11 +15,11 @@ import numpy as np
 # http://docs.scipy.org/doc/numpy-1.10.1/user/basics.subclassing.html
 class Hansel(np.ndarray):
 
-    def __new__(cls, input_arr):
+    def __new__(cls, input_arr, symbols):
         # Force our class on the input_arr
         obj = np.asarray(input_arr).view(cls)
         obj.is_weighted = False
-        obj.symbols = ['A', 'C', 'G', 'T', 'N']
+        obj.symbols = symbols
         obj.n_slices= 0
         obj.n_crumbs = 0
         return obj
@@ -33,9 +33,16 @@ class Hansel(np.ndarray):
         # View casting or from-template, add the missing info from the
         # existing object before finalizing
         self.is_weighted = getattr(obj, 'is_weighted', False)
-        self.symbols = getattr(obj, 'symbols', ['A', 'C', 'G', 'T', 'N'])
+        self.symbols = getattr(obj, 'symbols', [])
         self.n_slices = getattr(obj, 'n_slices', 0)
         self.n_crumbs = getattr(obj, 'n_crumbs', 0)
+
+        #TODO Safer warning?
+        if len(self.symbols) == 0:
+            import sys
+            sys.stderr.write("[FAIL] Attempted to allocate Hansel without symbols.\n")
+            sys.exit(1)
+
 
     def __orient_positions(self, i, j):
         if i < j:

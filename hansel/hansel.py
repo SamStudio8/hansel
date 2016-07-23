@@ -46,12 +46,15 @@ class Hansel(np.ndarray):
     symbols : list{str}
         The list of permitted states or symbols.
 
+    unsymbols : list{str}
+        A list of states that represent an absence of a symbol.
+
     is_weighted : boolean
         Whether or not the underlying numpy array has been modified by the
         `reweight_observation` function at least once.
 
     """
-    def __new__(cls, input_arr, symbols):
+    def __new__(cls, input_arr, symbols, unsymbols, L=1):
         # Force our class on the input_arr
         #TODO Is there an overhead in casting a view here (are we copying the
         #     big matrix to a new object? :(
@@ -59,8 +62,10 @@ class Hansel(np.ndarray):
 
         obj.is_weighted = False
         obj.symbols = symbols
+        obj.unsymbols = unsymbols
         obj.n_slices= 0
         obj.n_crumbs = 0
+        obj.L = L
         return obj
 
     #NOTE Provides support for construction mechanisms of numpy
@@ -86,6 +91,8 @@ class Hansel(np.ndarray):
         self.n_slices = getattr(obj, 'n_slices', 0)
         self.n_crumbs = getattr(obj, 'n_crumbs', 0)
         self.symbols = getattr(obj, 'symbols', [])
+        self.unsymbols = getattr(obj, 'unsymbols', [])
+        self.L = getattr(obj, 'L', 1)
 
         #TODO Safer warning?
         if self.symbols is None or len(self.symbols) == 0:
@@ -176,6 +183,7 @@ class Hansel(np.ndarray):
         symbol_from : str
             The first observed symbol of the pair to be reweighted (in space or time).
 
+        self.symbols = getattr(obj, 'symbols', [])
         symbol_to : str
             The second observed symbol of the pair to be reweighted (in space or time).
 
@@ -197,7 +205,7 @@ class Hansel(np.ndarray):
             if new_v < 1:
                 self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = 0
             else:
-                print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
+                #print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
                 self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = new_v
         self.is_weighted = True
 
@@ -229,7 +237,7 @@ class Hansel(np.ndarray):
             the sum of all observation counts.
         """
         marg = {"total": 0}
-        for symbol_a in self.symbols:
+        for symbol_a in list(set(self.symbols) - set(self.unsymbols)):
             obs = 0
             for symbol_b in self.symbols:
                 obs += self.get_observation(symbol_a, symbol_b, at_pos, at_pos+1)
@@ -265,7 +273,7 @@ class Hansel(np.ndarray):
         marginal = self.get_counts_at(at_symbol)
         return marginal[of_symbol] / marginal["total"]
 
-    def get_edge_weights_at(self, symbol_pos, current_path, L=5):
+    def get_edge_weights_at(self, symbol_pos, current_path):
         """Get the outgoing weighted edges at some position, given a path to that position.
 
         Parameters
@@ -294,7 +302,7 @@ class Hansel(np.ndarray):
         curr_branches = {}
         #curr_branches_tot = 0.0
         for symbol in self.get_counts_at(symbol_pos):
-            if symbol == "total":
+            if symbol in self.unsymbols or symbol == "total":
                 continue
 
             curr_branches[symbol] = 0.0
@@ -302,8 +310,8 @@ class Hansel(np.ndarray):
             # ...with conditionals on each part of LAST L ENTRIES in the current path
             # (where the case for there being less than L entries in the path being
             #  accounted for)
-            LI = L
-            if len(current_path) <= L:
+            LI = self.L
+            if len(current_path) <= self.L:
                 LI = len(current_path)-1
 
             for l in range(0, LI):
@@ -344,7 +352,12 @@ class Hansel(np.ndarray):
         marg_from = self.get_counts_at(pos_from) #TODO pos_from - 1?
         obs = self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
         total = self.get_spanning_support(symbol_to, pos_from, pos_to)
-        return self.__estimate_conditional(len(marg_from)-1, obs, total)
+
+        valid_symbols_seen = 0
+        for s in list(set(self.symbols) - set(self.unsymbols)):
+            if s in marg_from:
+                valid_symbols_seen += 1
+        return self.__estimate_conditional(valid_symbols_seen, obs, total)
 
     #TODO Should this be "number of sources", rather than "number of observations"
     def get_spanning_support(self, symbol_to, pos_from, pos_to):
@@ -378,8 +391,8 @@ class Hansel(np.ndarray):
                 is `True`.
         """
         total = 0
-        for symbol in self.symbols:
-            total += self.get_observation(symbol, symbol_to, pos_from, pos_to)
+        for symbol_from in list(set(self.symbols) - set(self.unsymbols)):
+            total += self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
         return total
 
     def __estimate_conditional(self, av, obs, total):

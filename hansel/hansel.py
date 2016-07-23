@@ -183,7 +183,6 @@ class Hansel(np.ndarray):
         symbol_from : str
             The first observed symbol of the pair to be reweighted (in space or time).
 
-        self.symbols = getattr(obj, 'symbols', [])
         symbol_to : str
             The second observed symbol of the pair to be reweighted (in space or time).
 

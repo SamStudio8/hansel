@@ -53,6 +53,10 @@ class Hansel(np.ndarray):
         Whether or not the underlying numpy array has been modified by the
         `reweight_observation` function at least once.
 
+    L : int, optional(default=1)
+        The number of positions back from the current position (inclusive)
+        to consider when calculating conditional probabilities.
+
     """
     def __new__(cls, input_arr, symbols, unsymbols, L=1):
         # Force our class on the input_arr
@@ -204,8 +208,33 @@ class Hansel(np.ndarray):
             if new_v < 1:
                 self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = 0
             else:
-                #print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
                 self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = new_v
+
+        #TODO This is a bit gross as we should maybe handle it with Gretel instead
+        if self.get_observation(symbol_from, "_", pos_from, pos_from+1) > 0:
+            #print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
+            old_v = self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1]
+
+            # Provisional testing seems to indicate this works best on small sets...
+            new_v = old_v - ((ratio*old_v) / (len( list(set(self.symbols) - set(self.unsymbols)) ) ))
+            """
+            new_v = old_v - (ratio*old_v)
+
+            marg_from = self.get_counts_at(pos_from)
+            valid_symbols_seen = 0
+            for s in list(set(self.symbols) - set(self.unsymbols)):
+                if s in marg_from:
+                    valid_symbols_seen += 1
+
+            new_v = old_v - ((ratio*old_v)/ valid_symbols_seen)
+            """
+
+            if old_v != 0:
+                if new_v < 1:
+                    self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = 0
+                else:
+                    self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = new_v
+
         self.is_weighted = True
 
     def __symbol_num(self, symbol):
@@ -285,10 +314,6 @@ class Hansel(np.ndarray):
             A list of symbols representing the path of selected symbols that led
             to the current position, `symbol_pos`.
 
-        L : int, optional(default=5)
-            The number of positions back from the current position (inclusive)
-            to consider when calculating conditional probabilities.
-
         Returns
         -------
         Conditional distribution : dict{str, float}
@@ -299,7 +324,6 @@ class Hansel(np.ndarray):
         """
         # ...work out each probability, for each branch
         curr_branches = {}
-        #curr_branches_tot = 0.0
         for symbol in self.get_counts_at(symbol_pos):
             if symbol in self.unsymbols or symbol == "total":
                 continue
@@ -318,7 +342,6 @@ class Hansel(np.ndarray):
                 curr_branches[symbol] += log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos))
 
             curr_branches[symbol] += log10(self.get_marginal_of_at(symbol, symbol_pos))
-            #curr_branches_tot += curr_branches[symbol]
 
         return curr_branches
 

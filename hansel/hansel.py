@@ -211,30 +211,34 @@ class Hansel(np.ndarray):
                 self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = new_v
 
         #TODO This is a bit gross as we should maybe handle it with Gretel instead
+        """
         if self.get_observation(symbol_from, "_", pos_from, pos_from+1) > 0:
             #print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
             old_v = self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1]
 
             # Provisional testing seems to indicate this works best on small sets...
-            new_v = old_v - ((ratio*old_v) / (len( list(set(self.symbols) - set(self.unsymbols)) ) ))
-            """
+            #new_v = old_v - ((ratio*old_v) / (len( list(set(self.symbols) - set(self.unsymbols)) ) ))
             new_v = old_v - (ratio*old_v)
 
-            marg_from = self.get_counts_at(pos_from)
-            valid_symbols_seen = 0
-            for s in list(set(self.symbols) - set(self.unsymbols)):
-                if s in marg_from:
-                    valid_symbols_seen += 1
+            try:
+                marg_from = self.get_counts_at(pos_from+1)
+            except IndexError:
+                pass
+            else:
 
-            new_v = old_v - ((ratio*old_v)/ valid_symbols_seen)
-            """
+                valid_symbols_seen = 0
+                for s in list(set(self.symbols) - set(self.unsymbols)):
+                    if s in marg_from:
+                        valid_symbols_seen += 1
 
-            if old_v != 0:
-                if new_v < 1:
-                    self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = 0
-                else:
-                    self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = new_v
+                new_v = old_v - ((ratio*old_v)/ valid_symbols_seen)
 
+                if old_v != 0:
+                    if new_v < 1:
+                        self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = 0
+                    else:
+                        self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = new_v
+        """
         self.is_weighted = True
 
     def __symbol_num(self, symbol):
@@ -265,7 +269,12 @@ class Hansel(np.ndarray):
             the sum of all observation counts.
         """
         marg = {"total": 0}
-        for symbol_a in list(set(self.symbols) - set(self.unsymbols)):
+        if(at_pos == 0):
+            permitted_a_symbols = self.symbols
+        else:
+            permitted_a_symbols = list(set(self.symbols) - set(self.unsymbols))
+
+        for symbol_a in permitted_a_symbols:
             obs = 0
             for symbol_b in self.symbols:
                 obs += self.get_observation(symbol_a, symbol_b, at_pos, at_pos+1)

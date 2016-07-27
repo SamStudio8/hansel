@@ -141,7 +141,7 @@ class Hansel(np.ndarray):
         """
         self.n_crumbs += 1
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] += 1
+        self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] += 1
 
     def get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
         """Get the number of co-occurrences of a pair of positioned symbols.
@@ -173,7 +173,7 @@ class Hansel(np.ndarray):
                 is `True`.
         """
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        return self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to]
+        return self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to]
 
     #TODO Describe the conditions under which reweighting halts in the documentation
     def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
@@ -201,14 +201,17 @@ class Hansel(np.ndarray):
             That is, `new_value = old_value - (ratio * old_value)`.
         """
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        old_v = self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to]
+        old_v = self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to]
         new_v = old_v - (ratio*old_v)
 
         if old_v != 0:
             if new_v < 1:
-                self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = 0
+                self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] = 0
+                return old_v
             else:
-                self[self.__symbol_num(symbol_from)][self.__symbol_num(symbol_to)][pos_from][pos_to] = new_v
+                self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] = new_v
+                return old_v - new_v
+        return 0.0
 
         #TODO This is a bit gross as we should maybe handle it with Gretel instead
         """

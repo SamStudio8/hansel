@@ -342,17 +342,20 @@ class Hansel(np.ndarray):
 
             curr_branches[symbol] = 0.0
 
-            # ...with conditionals on each part of LAST L ENTRIES in the current path
-            # (where the case for there being less than L entries in the path being
-            #  accounted for)
-            LI = self.L
-            if len(current_path) <= self.L:
-                LI = len(current_path)-1
+            if symbol_pos > 1:
 
-            for l in range(0, LI):
-                curr_i = len(current_path) - LI + l
-                curr_branches[symbol] += log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos))
+                # If the length of the path, without the sentinel is less than L,
+                # we can only inspect the available members of L so far...
+                if len(current_path)-1 < self.L:
+                    l_limit = len(current_path)-1
+                else:
+                    l_limit = self.L
 
+                for l in range(0, l_limit):
+                    curr_i = (len(current_path)-1) - l
+                    curr_branches[symbol] += log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos))
+
+            # Append the marginal of symbol at desired position
             curr_branches[symbol] += log10(self.get_marginal_of_at(symbol, symbol_pos))
 
         return curr_branches

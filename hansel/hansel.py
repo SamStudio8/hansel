@@ -1,7 +1,6 @@
 from math import log,log10
 
 import numpy as np
-#TODO Abstract symbols
 
 #NOTE
 # Although it is possible to 'fully' subclass numpy's ndarray, the
@@ -28,11 +27,14 @@ class Hansel(np.ndarray):
 
     input_arr : 4D numpy array
         A numpy array (typically initialised with zeros) of size (A, A, B+2, B+2),
-        where `A` is the number of `symbols` and `B` are the points in time or
+        where `A` is the number of `symbols` + `unsymbols` and `B` are the points in time or
         space on which pairwise observations between symbols can be observed.
 
     symbols : list{str}
         A list of permitted states or symbols as strings.
+
+    unsymbols : list{str}
+        A list of permitted states that may represent the known absence of a symbol.
 
     Attributes
     ----------
@@ -66,10 +68,13 @@ class Hansel(np.ndarray):
 
         obj.is_weighted = False
         obj.symbols = symbols
+        obj.symbols_d = {symbol: i for i, symbol in enumerate(symbols)}
         obj.unsymbols = unsymbols
         obj.n_slices= 0
         obj.n_crumbs = 0
         obj.L = L
+
+        obj.valid_symbols = set(symbols) - set(unsymbols)
         return obj
 
     #NOTE Provides support for construction mechanisms of numpy
@@ -79,7 +84,7 @@ class Hansel(np.ndarray):
         #     as __new__ now invokes a view cast and thus always sends us to
         #     __array_finalize__ *before* it has had a chance to set variables.
         #     I try and catch us inside a "__new__ view cast" by checking whether
-        #     obj is a plain ndarray (which is *should* be if this is new).
+        #     obj is a plain ndarray (which it *should* be if this is new).
         #     Elsewise type(obj) should be hansel.Hansel for a view cast or
         #     from-template on an existing Hansel structure.
         if obj is None or type(obj) == np.ndarray:
@@ -95,7 +100,9 @@ class Hansel(np.ndarray):
         self.n_slices = getattr(obj, 'n_slices', 0)
         self.n_crumbs = getattr(obj, 'n_crumbs', 0)
         self.symbols = getattr(obj, 'symbols', [])
+        self.symbols_d = getattr(obj, 'symbols_d', {})
         self.unsymbols = getattr(obj, 'unsymbols', [])
+        self.valid_symbols = getattr(obj, 'valid_symbols', set())
         self.L = getattr(obj, 'L', 1)
 
         #TODO Safer warning?
@@ -245,9 +252,9 @@ class Hansel(np.ndarray):
         self.is_weighted = True
 
     def __symbol_num(self, symbol):
-        #TODO Catch potential IndexError
+        #TODO Catch potential KeyError
         #TODO Generic mechanism for casing (considering non-alphabetically named states, too...)
-        return self.symbols.index(symbol)
+        return self.symbols_d[symbol]
 
     def __symbol_unnum(self, num):
         #TODO Catch potential IndexError
@@ -273,13 +280,13 @@ class Hansel(np.ndarray):
         """
         marg = {"total": 0}
         if(at_pos == 0):
-            permitted_a_symbols = self.symbols
+            permitted_a_symbols = self.symbols_d.keys()
         else:
-            permitted_a_symbols = list(set(self.symbols) - set(self.unsymbols))
+            permitted_a_symbols = self.valid_symbols
 
         for symbol_a in permitted_a_symbols:
             obs = 0
-            for symbol_b in self.symbols:
+            for symbol_b in self.symbols_d:
                 obs += self.get_observation(symbol_a, symbol_b, at_pos, at_pos+1)
 
             if obs > 0:
@@ -391,7 +398,7 @@ class Hansel(np.ndarray):
         total = self.get_spanning_support(symbol_to, pos_from, pos_to)
 
         valid_symbols_seen = 0
-        for s in list(set(self.symbols) - set(self.unsymbols)):
+        for s in self.valid_symbols:
             if s in marg_from:
                 valid_symbols_seen += 1
         return self.__estimate_conditional(valid_symbols_seen, obs, total)
@@ -428,17 +435,10 @@ class Hansel(np.ndarray):
                 is `True`.
         """
         total = 0
-        for symbol_from in list(set(self.symbols) - set(self.unsymbols)):
+        for symbol_from in self.valid_symbols:
             total += self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
         return total
 
     def __estimate_conditional(self, av, obs, total):
         return (1 + obs)/float(av + total)
 
-    #TODO
-    #def validate_path(self):
-    #    pass
-
-    #TODO
-    #def probability_path(self):
-    #    pass

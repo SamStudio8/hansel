@@ -1,4 +1,4 @@
-from math import log,log10
+from math import log10
 
 import numpy as np
 
@@ -393,7 +393,7 @@ class Hansel(np.ndarray):
             The conditional probability of `symbol_from` occurring at `pos_from`
             given observation of a predicted `symbol_to` at `pos_to`.
         """
-        marg_from = self.get_counts_at(pos_from) #TODO pos_from - 1?
+        marg_from = self.get_counts_at(pos_from)
         obs = self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
         total = self.get_spanning_support(symbol_to, pos_from, pos_to)
 

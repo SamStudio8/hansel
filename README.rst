@@ -9,7 +9,7 @@ What is it?
 -----------
 
 **Hansel** is a probabilistically-weighted, graph-inspired, novel data structure.
-Hansel is designed to store the number of observed occurrences of a symbol `a` appearing at some position in space or time `i`, co-occurring wit hanother symbol `b` at another position in space or time `j`.
+Hansel is designed to store the number of observed occurrences of a symbol `a` appearing at some position in space or time `i`, co-occurring with another symbol `b` at another position in space or time `j`.
 
 One may traverse along ordered positions in time or space, each time predicting the next most likely symbol of the sequence to traverse to, given the previously selected symbols in the path.
 Hansel presents a user-friendly API for managing and interacting with the data stored within.

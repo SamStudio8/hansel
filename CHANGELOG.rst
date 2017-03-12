@@ -1,8 +1,29 @@
 History
 =======
 
-0.0.5-wip
----------
+0.0.7
+-----
+* Documentation
+
+0.0.6
+-----
+* Switch to dictionaries and sets generated at construction time to speed
+  up the lookup of symbols
+
+0.0.5
+-----
+* Introduce `unsymbols` to cover cases where you would like to count observations
+  from some `a` to an "invalid" `b` during marginal calculation, but still prevent
+  the actual selection of the invalid `b` as a transition choice
+* Member list `unsymbols` keeps track of symbols who should have no
+  weighting when counting observations or calculating marginals.
+* Allow a user to construct Hansel with an argument for the lookback order.
+* Alter `get_spanning_support` and `get_counts_at` to not count observations
+  that originate from an ignored unsymbol and transition to a real symbol.
+  This alteration makes things work even if you've been a silly and filled
+  Hansel with more crummy data than usual, hooray.
+* Dramatically improve performance by using the correct ndarray indexing
+  syntax [A, B, i, j] vs. [A][B][i][j]
 
 0.0.4
 -----

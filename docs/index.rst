@@ -1,17 +1,14 @@
-.. Hansel documentation master file, created by
-   sphinx-quickstart on Mon Jun 13 13:30:17 2016.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+Hansel
+======
 
-Welcome to Hansel's documentation!
-==================================
-
-Contents:
+A graph-inspired data structure for determining likely chains of sequences from breadcrumbs of evidence. Brother to `Gretel <http://gretel.readthedocs.io/en/latest/>`_.
 
 .. toctree::
    :maxdepth: 2
 
    readme
+   about
+   usage
    changelog
 
 

@@ -1,29 +1,34 @@
-hansel
+Hansel
 ======
 
-A (work-in-progress) graph-inspired data structure for determining likely chains of sequences from breadcrumbs of evidence.
+A graph-inspired data structure for determining likely chains of ordered symbols from breadcrumbs of evidence.
 Brother to `Gretel
 <https://github.com/SamStudio8/gretel>`_.
 
-Citation
---------
+What is it?
+-----------
 
-Please cite us so we can continue to make useful software! ::
+**Hansel** is a probabilistically-weighted, graph-inspired, novel data structure.
+Hansel is designed to store the number of observed occurrences of a symbol `a` appearing at some position in space or time `i`, co-occurring wit hanother symbol `b` at another position in space or time `j`.
 
-    Nicholls, S.M., Aubrey, W., de Grave, K., Schietgat, L., Creevey, C.J. and Clare, A., 2016. Advances in the recovery of haplotypes from the metagenome. bioRxiv, p.067215.
+One may traverse along ordered positions in time or space, each time predicting the next most likely symbol of the sequence to traverse to, given the previously selected symbols in the path.
+Hansel presents a user-friendly API for managing and interacting with the data stored within.
 
+Requirements
+------------
 ::
 
-    @article {Nicholls067215,
-        author = {Nicholls, Samuel M and Aubrey, Wayne and de Grave, Kurt and Schietgat, Leander and Creevey, Chris J and Clare, Amanda},
-        title = {Advances in the recovery of haplotypes from the metagenome},
-        year = {2016},
-        doi = {10.1101/067215},
-        publisher = {Cold Spring Harbor Labs Journals},
-        URL = {http://biorxiv.org/content/early/2016/08/02/067215},
-        eprint = {http://biorxiv.org/content/early/2016/08/02/067215.full.pdf},
-        journal = {bioRxiv}
-    }
+    pip install numpy
+
+Install
+-------
+::
+
+    pip install hanselx
+
+Citation
+--------
+Paper pending...
 
 License
 -------

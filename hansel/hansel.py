@@ -2,6 +2,19 @@ from math import log10
 
 import numpy as np
 
+class HanselSymbol(int):
+    """Shim integer that allows an int to masquerade as a str.
+    HanselSymbol essentially acts as an int, but when coerced to a str, it will
+    use an internal dictionary to map the value of itself to the corresponding
+    Hansel symbol."""
+
+    def __new__(cls, symbol_lookup, value):
+        cls.symbol_lookup = symbol_lookup
+        return int.__new__(cls, value)
+
+    def __str__(self):
+        return self.symbol_lookup.get(self, None)
+
 #NOTE
 # Although it is possible to 'fully' subclass numpy's ndarray, the
 # accepted practice appears to be instructing users to create an ndarray first
@@ -48,6 +61,17 @@ class Hansel(np.ndarray):
     symbols : list{str}
         The list of permitted states or symbols.
 
+    symbols_d : dict{str: int}
+        A mapping of symbols to their integer index in the matrix
+
+    symbols_i : dict{int: str}
+        A mapping of integer indices to their corresponding symbol
+
+    valid_symbols_i : dict{int: str}
+        A mapping of integer indices to their corresponding symbol, iff the symbol
+        does not appear in the given list of unsymbols. `valid_symbols_i` is therefore
+        a subset of `symbols_i`.
+
     unsymbols : list{str}
         A list of states that represent an absence of a symbol.
 
@@ -66,15 +90,19 @@ class Hansel(np.ndarray):
         #     big matrix to a new object? :(
         obj = np.asarray(input_arr).view(cls)
 
-        obj.is_weighted = False
-        obj.symbols = symbols
-        obj.symbols_d = {symbol: i for i, symbol in enumerate(symbols)}
-        obj.unsymbols = unsymbols
         obj.n_slices= 0
         obj.n_crumbs = 0
+
+        obj.symbols = symbols
+        obj.symbols_d = {symbol: i for i, symbol in enumerate(symbols)}
+        obj.symbols_i = {i: symbol for i, symbol in enumerate(symbols)}
+
+        obj.is_weighted = False
+
+        obj.unsymbols = unsymbols
         obj.L = L
 
-        obj.valid_symbols = set(symbols) - set(unsymbols)
+        obj.valid_symbols_i = {i: symbol for i, symbol in enumerate(symbols) if symbol not in unsymbols}
         return obj
 
     #NOTE Provides support for construction mechanisms of numpy
@@ -102,8 +130,10 @@ class Hansel(np.ndarray):
         self.symbols = getattr(obj, 'symbols', [])
         self.symbols_d = getattr(obj, 'symbols_d', {})
         self.unsymbols = getattr(obj, 'unsymbols', [])
-        self.valid_symbols = getattr(obj, 'valid_symbols', set())
         self.L = getattr(obj, 'L', 1)
+
+        self.symbols_i = getattr(obj, 'symbols_i', {})
+        self.valid_symbols_i = getattr(obj, 'valid_symbols_i', {})
 
         #TODO Safer warning?
         if self.symbols is None or len(self.symbols) == 0:
@@ -127,7 +157,7 @@ class Hansel(np.ndarray):
         """An alias for `n_crumbs`"""
         return self.n_crumbs
 
-    def add_observation(self, symbol_from, symbol_to, pos_from, pos_to):
+    def add_observation(self, symbol_from, symbol_to, pos_from, pos_to, value=1):
         """Add a pairwise observation to the data structure.
 
         Parameters
@@ -145,10 +175,17 @@ class Hansel(np.ndarray):
         pos_to : int
             The "position" at which `symbol_to` was observed.
 
+        value : float, optional(default=1)
+            Magnitude of the observation (defaults to 1).
+
         """
         self.n_crumbs += 1
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] += 1
+        self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] += value
+
+    def __get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
+        pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
+        return self[symbol_from, symbol_to, pos_from, pos_to]
 
     def get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
         """Get the number of co-occurrences of a pair of positioned symbols.
@@ -179,8 +216,7 @@ class Hansel(np.ndarray):
                 a `float` if :attr:`hansel.hansel.Hansel.is_weighted`
                 is `True`.
         """
-        pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        return self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to]
+        return self.__get_observation[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to]
 
     #TODO Describe the conditions under which reweighting halts in the documentation
     def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
@@ -191,10 +227,10 @@ class Hansel(np.ndarray):
         Parameters
         ----------
 
-        symbol_from : str
+        symbol_from : :py:class:`hansel.hansel.HanselSymbol`
             The first observed symbol of the pair to be reweighted (in space or time).
 
-        symbol_to : str
+        symbol_to : :py:class:`hansel.hansel.HanselSymbol`
             The second observed symbol of the pair to be reweighted (in space or time).
 
         pos_from : int
@@ -208,47 +244,18 @@ class Hansel(np.ndarray):
             That is, `new_value = old_value - (ratio * old_value)`.
         """
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        old_v = self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to]
+        old_v = self[symbol_from, symbol_to, pos_from, pos_to]
         new_v = old_v - (ratio*old_v)
 
         if old_v != 0:
             if new_v < 1:
-                self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] = 0
+                self[symbol_from, symbol_to, pos_from, pos_to] = 0
                 return old_v
             else:
-                self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] = new_v
+                self[symbol_from, symbol_to, pos_from, pos_to] = new_v
                 return old_v - new_v
         return 0.0
 
-        #TODO This is a bit gross as we should maybe handle it with Gretel instead
-        """
-        if self.get_observation(symbol_from, "_", pos_from, pos_from+1) > 0:
-            #print "Reducing support between %d(%s) -> %d(%s) by %.2f (%.2f -> %.2f)" % (pos_from, symbol_from, pos_to, symbol_to, ratio, old_v, new_v)
-            old_v = self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1]
-
-            # Provisional testing seems to indicate this works best on small sets...
-            #new_v = old_v - ((ratio*old_v) / (len( list(set(self.symbols) - set(self.unsymbols)) ) ))
-            new_v = old_v - (ratio*old_v)
-
-            try:
-                marg_from = self.get_counts_at(pos_from+1)
-            except IndexError:
-                pass
-            else:
-
-                valid_symbols_seen = 0
-                for s in list(set(self.symbols) - set(self.unsymbols)):
-                    if s in marg_from:
-                        valid_symbols_seen += 1
-
-                new_v = old_v - ((ratio*old_v)/ valid_symbols_seen)
-
-                if old_v != 0:
-                    if new_v < 1:
-                        self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = 0
-                    else:
-                        self[self.__symbol_num(symbol_from)][self.__symbol_num("_")][pos_from][pos_from+1] = new_v
-        """
         self.is_weighted = True
 
     def __symbol_num(self, symbol):
@@ -260,7 +267,6 @@ class Hansel(np.ndarray):
         #TODO Catch potential IndexError
         return self.symbols[num]
 
-    #TODO What about non-whole genes (need a special symbol)
     def get_counts_at(self, at_pos):
         """Get the counts for each symbol that appears at a given position.
 
@@ -272,7 +278,7 @@ class Hansel(np.ndarray):
 
         Returns
         -------
-        Symbol counts : dict{str, float}
+        Symbol counts : dict{str: float}
             A dictionary whose keys are each of the symbols that were observed
             at position `at_pos` and a special "total" key. The values are the
             number of observations of that symbol at `at_pos`. The "total" is
@@ -280,20 +286,19 @@ class Hansel(np.ndarray):
         """
         marg = {"total": 0}
         if(at_pos == 0):
-            permitted_a_symbols = self.symbols_d.keys()
+            permitted_a_symbols = self.symbols_i
         else:
-            permitted_a_symbols = self.valid_symbols
+            permitted_a_symbols = self.valid_symbols_i
 
         for symbol_a in permitted_a_symbols:
             obs = 0
-            for symbol_b in self.symbols_d:
-                obs += self.get_observation(symbol_a, symbol_b, at_pos, at_pos+1)
+            for symbol_b in self.symbols_i:
+                obs += self.__get_observation(symbol_a, symbol_b, at_pos, at_pos+1)
 
             if obs > 0:
-                marg[symbol_a] = obs
+                marg[HanselSymbol(self.symbols_i, symbol_a)] = obs
                 marg["total"] += obs
 
-        #print "\t[MARG] %d %s" % (symbol_pos, str(marg))
         return marg
 
     def get_marginal_of_at(self, of_symbol, at_symbol):
@@ -329,13 +334,13 @@ class Hansel(np.ndarray):
         symbol_pos : int
             The index of the current position.
 
-        current_path : list{str}
+        current_path : list{HanselSymbol}
             A list of symbols representing the path of selected symbols that led
             to the current position, `symbol_pos`.
 
         Returns
         -------
-        Conditional distribution : dict{str, float}
+        Conditional distribution : dict{str: float}
             A dictionary whose keys are each of the possible symbols that may
             be reached from the current position, given the observed path.
             The values are `log10` conditional probabilities of the next symbol
@@ -344,7 +349,7 @@ class Hansel(np.ndarray):
         # ...work out each probability, for each branch
         curr_branches = {}
         for symbol in self.get_counts_at(symbol_pos):
-            if symbol in self.unsymbols or symbol == "total":
+            if str(symbol) in self.unsymbols or str(symbol) == "total":
                 continue
 
             curr_branches[symbol] = 0.0
@@ -374,10 +379,10 @@ class Hansel(np.ndarray):
         Parameters
         ----------
 
-        symbol_from : str
+        symbol_from : :py:class:`hansel.hansel.HanselSymbol`
             The first (given) symbol of the pair on which to condition.
 
-        symbol_to : str
+        symbol_to : :py:class:`hansel.hansel.HanselSymbol`
             The second (predicted) symbol of the pair on which to condition.
 
         pos_from : int
@@ -394,11 +399,11 @@ class Hansel(np.ndarray):
             given observation of a predicted `symbol_to` at `pos_to`.
         """
         marg_from = self.get_counts_at(pos_from)
-        obs = self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
+        obs = self.__get_observation(symbol_from, symbol_to, pos_from, pos_to)
         total = self.get_spanning_support(symbol_to, pos_from, pos_to)
 
         valid_symbols_seen = 0
-        for s in self.valid_symbols:
+        for s in self.valid_symbols_i:
             if s in marg_from:
                 valid_symbols_seen += 1
         return self.__estimate_conditional(valid_symbols_seen, obs, total)
@@ -410,7 +415,7 @@ class Hansel(np.ndarray):
         Parameters
         ----------
 
-        symbol_to : str
+        symbol_to : :py:class:`hansel.hansel.HanselSymbol`
             The symbol that should appear at `pos_to`.
 
         pos_from : int
@@ -435,8 +440,8 @@ class Hansel(np.ndarray):
                 is `True`.
         """
         total = 0
-        for symbol_from in self.valid_symbols:
-            total += self.get_observation(symbol_from, symbol_to, pos_from, pos_to)
+        for symbol_from in self.valid_symbols_i:
+            total += self.__get_observation(symbol_from, symbol_to, pos_from, pos_to)
         return total
 
     def __estimate_conditional(self, av, obs, total):

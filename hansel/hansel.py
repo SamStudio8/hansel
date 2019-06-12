@@ -15,6 +15,7 @@ class HanselSymbol(int):
     def __str__(self):
         return self.symbol_lookup.get(self, None)
 
+
 #NOTE
 # Although it is possible to 'fully' subclass numpy's ndarray, the
 # accepted practice appears to be instructing users to create an ndarray first
@@ -141,11 +142,35 @@ class Hansel(np.ndarray):
             sys.stderr.write("[FAIL] Attempted to allocate Hansel structure without symbols.\n")
             sys.exit(1)
 
+    @staticmethod
+    def init_matrix(symbols, unsymbols, n_positions):
+        from multiprocessing import Array
+        import ctypes
+
+        n_symbols = len(symbols)
+        n_positions += 2 # Add a position for the start source and end sink
+        hanselx = np.frombuffer(Array(ctypes.c_float, n_symbols * n_symbols * n_positions * n_positions, lock=False), dtype=ctypes.c_float)
+        hanselx = hanselx.reshape(n_symbols, n_symbols, n_positions, n_positions)
+        hanselx.fill(0.0) # Initialise as empty
+        return Hansel(hanselx, symbols, unsymbols)
+
     def __orient_positions(self, i, j):
         if i < j:
             return i, j
         else:
             return j, i
+
+    def __orient_symbols(self, symbol_a, symbol_b, pos_from, pos_to, mirror=False):
+        if not mirror:
+            if pos_from < pos_to:
+                return symbol_a, symbol_b, pos_from, pos_to
+            else:
+                return symbol_b, symbol_a, pos_to, pos_from
+        else:
+            if pos_from > pos_to:
+                return symbol_a, symbol_b, pos_from, pos_to
+            else:
+                return symbol_b, symbol_a, pos_to, pos_from
 
     @property
     def sources(self):
@@ -216,9 +241,8 @@ class Hansel(np.ndarray):
                 a `float` if :attr:`hansel.hansel.Hansel.is_weighted`
                 is `True`.
         """
-        return self.__get_observation[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to]
+        return self.__get_observation(self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to)
 
-    #TODO Describe the conditions under which reweighting halts in the documentation
     def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
         """Alter the number of co-occurrences between a pair of positioned symbols by some ratio.
 
@@ -267,6 +291,63 @@ class Hansel(np.ndarray):
         #TODO Catch potential IndexError
         return self.symbols[num]
 
+    def write_path_support_matrix(self, fname, path_a, path_b=None):
+        # from    to  count_on    count_off   marginal_on marginal_off
+        fh = open(fname, 'w')
+        fh.write("\t".join([
+            "symbol_a",
+            "symbol_b",
+            "i",
+            "j",
+            "obs",
+            "total",
+        ])+'\n')
+
+        def count_and_write(symbol_a, symbol_b, i, j, mirror=False):
+            s_a, s_b, pos_i, pos_j = self.__orient_symbols(symbol_a, symbol_b, i, j, mirror=mirror)
+            obs = self.__get_observation(self.__symbol_num(s_a), self.__symbol_num(s_b), pos_i, pos_j)
+            total = self.get_spanning_support(self.__symbol_num(s_b), pos_i, pos_j)
+
+            fh.write("\t".join([str(x) for x in [
+                symbol_a,
+                symbol_b,
+                i,
+                j,
+                obs,
+                total,
+            ]]) + '\n')
+
+        for i, symbol_a in enumerate(path_a):
+            for j, symbol_b in enumerate(path_a):
+                if path_b:
+                    if i > j:
+                        # easier to do this here whatev
+                        continue
+                count_and_write(symbol_a, symbol_b, i, j)
+        if path_b:
+            for i, symbol_a in enumerate(path_b):
+                for j, symbol_b in enumerate(path_b):
+                    if i < j:
+                        continue
+                    count_and_write(symbol_a, symbol_b, i, j, mirror=False)
+
+
+        fh.close()
+
+    def load_hansel_dump(self, prefix):
+        import glob
+        dump_names = glob.glob(prefix+"*hansel*txt")
+        for dump_fn in dump_names:
+            symbol_a, symbol_b = dump_fn.split('.')[-2].split("~")
+            self[self.symbols_d[symbol_a], self.symbols_d[symbol_b]] = np.loadtxt(dump_fn, delimiter=',')
+        return(dump_names)
+
+    def save_hansel_dump(self, prefix):
+        for symbol_a in self.symbols_d:
+            for symbol_b in self.symbols_d:
+                dump_fn = prefix + ".hansel.%s~%s.txt" % (symbol_a, symbol_b)
+                np.savetxt(dump_fn, self[self.symbols_d[symbol_a], self.symbols_d[symbol_b]], delimiter=',')
+
     def get_counts_at(self, at_pos):
         """Get the counts for each symbol that appears at a given position.
 
@@ -292,6 +373,7 @@ class Hansel(np.ndarray):
 
         for symbol_a in permitted_a_symbols:
             obs = 0
+            #TODO Should this be the other way around?
             for symbol_b in self.symbols_i:
                 obs += self.__get_observation(symbol_a, symbol_b, at_pos, at_pos+1)
 

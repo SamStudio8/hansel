@@ -85,7 +85,7 @@ class Hansel(np.ndarray):
         to consider when calculating conditional probabilities.
 
     """
-    def __new__(cls, input_arr, symbols, unsymbols, L=1):
+    def __new__(cls, input_arr, symbols, unsymbols, L=0):
         # Force our class on the input_arr
         #TODO Is there an overhead in casting a view here (are we copying the
         #     big matrix to a new object? :(
@@ -131,7 +131,7 @@ class Hansel(np.ndarray):
         self.symbols = getattr(obj, 'symbols', [])
         self.symbols_d = getattr(obj, 'symbols_d', {})
         self.unsymbols = getattr(obj, 'unsymbols', [])
-        self.L = getattr(obj, 'L', 1)
+        self.L = getattr(obj, 'L', 0)
 
         self.symbols_i = getattr(obj, 'symbols_i', {})
         self.valid_symbols_i = getattr(obj, 'valid_symbols_i', {})
@@ -204,7 +204,7 @@ class Hansel(np.ndarray):
             Magnitude of the observation (defaults to 1).
 
         """
-        self.n_crumbs += 1
+        #self.n_crumbs += 1 # This doesn't work when updating the matrix in parallel, users should set it manually instead
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
         self[self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to] += value
 
@@ -243,6 +243,7 @@ class Hansel(np.ndarray):
         """
         return self.__get_observation(self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to)
 
+    #TODO Use orient here to avoid having gretel do it
     def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
         """Alter the number of co-occurrences between a pair of positioned symbols by some ratio.
 
@@ -389,10 +390,10 @@ class Hansel(np.ndarray):
         Parameters
         ----------
 
-        of_symbol : str
+        of_symbol : :py:class:`hansel.hansel.HanselSymbol`
             The symbol for which to calculate the marginal distribution.
 
-        at_symbol : int
+        at_symbol : :py:class:`hansel.hansel.HanselSymbol`
             The position at which to calculate the marginal distribution.
 
         Returns

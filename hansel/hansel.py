@@ -160,17 +160,17 @@ class Hansel(np.ndarray):
         else:
             return j, i
 
-    def __orient_symbols(self, symbol_a, symbol_b, pos_from, pos_to, mirror=False):
-        if not mirror:
-            if pos_from < pos_to:
-                return symbol_a, symbol_b, pos_from, pos_to
-            else:
-                return symbol_b, symbol_a, pos_to, pos_from
-        else:
-            if pos_from > pos_to:
-                return symbol_a, symbol_b, pos_from, pos_to
-            else:
-                return symbol_b, symbol_a, pos_to, pos_from
+    #def __orient_symbols(self, symbol_a, symbol_b, pos_from, pos_to, mirror=False):
+    #    if not mirror:
+    #        if pos_from < pos_to:
+    #            return symbol_a, symbol_b, pos_from, pos_to
+    #        else:
+    #            return symbol_b, symbol_a, pos_to, pos_from
+    #    else:
+    #        if pos_from > pos_to:
+    #            return symbol_a, symbol_b, pos_from, pos_to
+    #        else:
+    #            return symbol_b, symbol_a, pos_to, pos_from
 
     @property
     def sources(self):
@@ -210,7 +210,14 @@ class Hansel(np.ndarray):
 
     def __get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
         pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        return self[symbol_from, symbol_to, pos_from, pos_to]
+        v = self[symbol_from, symbol_to, pos_from, pos_to]
+
+        # reweight_matrix destroys evidence without checking for <1 cells for speed
+        # so let's check for it here instead
+        if v >= 1.0:
+            return v
+        else:
+            return 0
 
     def get_observation(self, symbol_from, symbol_to, pos_from, pos_to):
         """Get the number of co-occurrences of a pair of positioned symbols.
@@ -243,7 +250,6 @@ class Hansel(np.ndarray):
         """
         return self.__get_observation(self.__symbol_num(symbol_from), self.__symbol_num(symbol_to), pos_from, pos_to)
 
-    #TODO Use orient here to avoid having gretel do it
     def reweight_observation(self, symbol_from, symbol_to, pos_from, pos_to, ratio):
         """Alter the number of co-occurrences between a pair of positioned symbols by some ratio.
 
@@ -268,20 +274,31 @@ class Hansel(np.ndarray):
             The ratio by which to subtract the current number of observations.
             That is, `new_value = old_value - (ratio * old_value)`.
         """
-        pos_from, pos_to = self.__orient_positions(pos_from, pos_to)
-        old_v = self[symbol_from, symbol_to, pos_from, pos_to]
+
+        s_a = symbol_from
+        s_b = symbol_to
+        pos_i, pos_j = self.__orient_positions(pos_from, pos_to)
+
+        old_v = self[s_a, s_b, pos_i, pos_j]
         new_v = old_v - (ratio*old_v)
 
         if old_v != 0:
             if new_v < 1:
-                self[symbol_from, symbol_to, pos_from, pos_to] = 0
+                # Once the last whole crumb of evidence has been used, set it to 0
+                # otherwise we will ~infinitely take smaller and smaller decimal crumbs away
+                self[s_a, s_b, pos_i, pos_j] = 0
                 return old_v
             else:
-                self[symbol_from, symbol_to, pos_from, pos_to] = new_v
+                self[s_a, s_b, pos_i, pos_j] = new_v
                 return old_v - new_v
+        self.is_weighted = True
         return 0.0
 
+    def reweight_matrix(self, ratio):
+        total = self.sum()
+        self = self - (self*ratio)
         self.is_weighted = True
+        return total - self.sum()
 
     def __symbol_num(self, symbol):
         #TODO Catch potential KeyError
@@ -304,10 +321,14 @@ class Hansel(np.ndarray):
             "total",
         ])+'\n')
 
-        def count_and_write(symbol_a, symbol_b, i, j, mirror=False):
-            s_a, s_b, pos_i, pos_j = self.__orient_symbols(symbol_a, symbol_b, i, j, mirror=mirror)
+        def count_and_write(s_a, s_b, pos_i, pos_j, flip=False):
+            #s_a, s_b, pos_i, pos_j = self.__orient_symbols(symbol_a, symbol_b, i, j, mirror=mirror)
             obs = self.__get_observation(self.__symbol_num(s_a), self.__symbol_num(s_b), pos_i, pos_j)
-            total = self.get_spanning_support(self.__symbol_num(s_b), pos_i, pos_j)
+            total = self.get_counts_at(pos_j)["total"]
+
+            i, j = pos_i, pos_j
+            if flip:
+                i, j = pos_j, pos_i
 
             fh.write("\t".join([str(x) for x in [
                 symbol_a,
@@ -330,7 +351,7 @@ class Hansel(np.ndarray):
                 for j, symbol_b in enumerate(path_b):
                     if i < j:
                         continue
-                    count_and_write(symbol_a, symbol_b, i, j, mirror=False)
+                    count_and_write(symbol_b, symbol_a, j, i, flip=True)
 
 
         fh.close()
@@ -408,7 +429,7 @@ class Hansel(np.ndarray):
         marginal = self.get_counts_at(at_symbol)
         return marginal[of_symbol] / marginal["total"]
 
-    def get_edge_weights_at(self, symbol_pos, current_path):
+    def get_edge_weights_at(self, symbol_pos, current_path, debug=False):
         """Get the outgoing weighted edges at some position, given a path to that position.
 
         Parameters
@@ -449,6 +470,8 @@ class Hansel(np.ndarray):
                 for l in range(0, l_limit):
                     curr_i = (len(current_path)-1) - l
                     curr_branches[symbol] += log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos))
+                    if debug:
+                        print("%.15f" % log10(self.get_conditional_of_at(current_path[curr_i], symbol, curr_i, symbol_pos)), current_path[curr_i], symbol, curr_i, symbol_pos)
 
             # Append the marginal of symbol at desired position
             curr_branches[symbol] += log10(self.get_marginal_of_at(symbol, symbol_pos))
@@ -484,12 +507,15 @@ class Hansel(np.ndarray):
         marg_from = self.get_counts_at(pos_from)
         obs = self.__get_observation(symbol_from, symbol_to, pos_from, pos_to)
         total = self.get_spanning_support(symbol_to, pos_from, pos_to)
+        total_from = self.get_counts_at(pos_from)["total"]
+        marg_sym_from = self.get_marginal_of_at(symbol_from, pos_from)
 
         valid_symbols_seen = 0
         for s in self.valid_symbols_i:
             if s in marg_from:
                 valid_symbols_seen += 1
         return self.__estimate_conditional(valid_symbols_seen, obs, total)
+        #return self.__estimate_conditional_wmarginal(valid_symbols_seen, obs, total_from, total, marg_sym_from)
 
     #TODO Should this be "number of sources", rather than "number of observations"
     def get_spanning_support(self, symbol_to, pos_from, pos_to):
@@ -529,4 +555,19 @@ class Hansel(np.ndarray):
 
     def __estimate_conditional(self, av, obs, total):
         return (1 + obs)/float(av + total)
+        #if obs < 1:
+        #    return 0.0000001
+        #else:
+        #    #return (1 + obs)/float(av + total)
+        #    return (obs)/float(total)
+
+    def __estimate_conditional_wmarginal(self, av, obs, total_from, span_j, marg_from_symbol):
+        # this is a cool idea but not sure if statistically sound because
+        # a) does it destroy the calculation that this is a conditional, not a marginal
+        # b) it considers the delta between total_from and span_j, which becomes ~invalid after the first reweight...
+        delta = total_from - span_j
+        if delta < 0:
+            delta = 0
+        c = ((delta * marg_from_symbol) + obs + 1) / float(av + span_j + delta)
+        return c
 
